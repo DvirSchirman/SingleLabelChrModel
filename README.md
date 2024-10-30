@@ -39,3 +39,17 @@ Pre-ran simulations' raw data used for this paper, available for further analysi
 ### Visualize the model output
 You can visualize the model's output using [PyMol](https://pymol.org/) (Movie S3).<br>
 To visualize the dynamic model output, first convert the model's binary output data to a .pdb trajectory file using `simulation_code/convert_trj2pdb.py`. Then open PyMol and within it run `simulation_code/visualize_trj_restraints_repInput.py` 
+
+# Imaging data visualization
+Jupyter notebook `visualize_data/Visualize_library_data.ipynb` can be used to reproduce the following: 
+- Library compositions maps presented in figures 1a & 2
+- Figures 3, 4, & S7
+- Movies S1, S2
+## Code dependencies
+The following python packages are needed:
+- biopython
+- pycirclize
+- pandas
+- numpy
+- matplotlib
+- seaborn
