@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 28 14:13:40 2023
+
+@author: dvirs
+"""
+
+import polychrom.polymer_analyses
+from polychrom.hdf5_format import list_URIs, load_URI
+import numpy as np
+import scipy as sp
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+from multiprocessing import Pool, cpu_count
+import seaborn as sb
+import glob
+from scipy.spatial import distance_matrix
+import argparse
+
+def create_parser():
+    parser = argparse.ArgumentParser(description='Analysis of 3D chromosome structure model')
+    parser.add_argument('-m', '--model_path', default='240604_ensemble100_normalizedR_50xR',type=str, help="path to model output")
+    
+    return parser
+
+    
+def get_instance_distance(folder, blocks_per_bin, N, copyNum):
+    instance_num = int(folder[-3:])
+    print('getting contacts instance #%d\n' % instance_num)
+    URIs = list_URIs(folder)
+    URIs = URIs[1:]
+    numBins = int(len(URIs)/blocks_per_bin)
+    mass_array_bins =  np.loadtxt(folder + "/massArray_bins.csv", delimiter=',')
+    
+    distanceMat = []
+    distanceMatReduced = []
+    
+    n=0
+    for i in range(numBins):
+        distanceMat.append(np.zeros((N,N)))
+        distanceMatReduced.append(np.zeros((N,N)))
+        for j in range(blocks_per_bin):
+            U = URIs[n]
+            frame = load_URI(U)
+            positions = frame["pos"]
+            positionsReduced = np.zeros((len(positions),2))
+            positionsReduced[:,1] = positions[:,2]
+            positionsReduced[:,0] = np.sqrt(positions[:,0]**2 + positions[:,1]**2)
+            
+            distanceMatTmp = distance_matrix(positions, positions)
+            distanceMatReducedTmp = distance_matrix(positionsReduced, positionsReduced)
+            
+            zeroMass_inds = np.where(mass_array_bins[:,i]==0)
+            distanceMatTmp[:,zeroMass_inds] = np.nan
+            distanceMatTmp[zeroMass_inds,:] = np.nan
+            distanceMatReducedTmp[:,zeroMass_inds] = np.nan
+            distanceMatReducedTmp[zeroMass_inds,:] = np.nan
+            
+            for j in range(N):
+                tmp = np.zeros((copyNum,copyNum*N))
+                tmpR = np.zeros((copyNum,copyNum*N))
+                for k in range(copyNum):
+                    tmp[k,:] = distanceMatTmp[k*N+j,:]
+                    tmpR[k,:] = distanceMatReducedTmp[k*N+j,:]
+                tmp = tmp.reshape((copyNum*copyNum,N))
+                tmpR = tmpR.reshape((copyNum*copyNum,N))
+                distanceMat[i][:,j] += np.nanmin(tmp[:,:N],axis=0)
+                distanceMatReduced[i][:,j] = np.nanmin(tmpR[:,:N],axis=0)
+            
+            n+=1
+    return distanceMat, distanceMatReduced
+
+parser=create_parser()
+args = parser.parse_args()
+
+modelsPath = args.model_path
+
+N_MG1655 = 4641652
+copyNum = 4
+blocks_per_bin = 10
+# modelsPath = "full_cell_cycle_model_200k_2D_pooledExp_angK4_multiInstancesGPU_230719" 
+# modelsPath = "full_cell_cycle_model_200k_2D_pooledExp_multiInstancesGPU_repInput_angK4_weakTether_230802"
+# modelsPath = "full_cell_cycle_model_200k_2D_pooledExp_multiInstancesGPU_repInput_angK2_weakTether_N1k_230815"
+# modelsPath = "full_cell_cycle_model_2D_pooledExp_multiInstancesGPU_repInput_angK2_N1k_noRestraints_230825"
+# modelsPath = "240604_ensemble100_normalizedR_50xR"
+# modelsPath = "240502_ensemble100_noRestraints"
+
+
+# modelsPath = "full_cell_cycle_model_2D_pooledExp_multiInstancesGPU_repInput_angK2_N1k_230822"
+modelsList = glob.glob(modelsPath + '/*')
+modelsList.sort()
+rm_list = []
+for i, m in enumerate(modelsList):
+    try:
+        list_URIs(m)
+    except:
+        # list_models.remove(m)
+        rm_list.append(i)
+# list_models = list_models[:2]
+rm_list.sort(reverse=True)
+for i in rm_list:
+    modelsList.pop(i)    
+
+URIs = list_URIs(modelsList[0])
+numBins = int(len(URIs)/blocks_per_bin)
+first_frame = load_URI(URIs[0])
+# N = int(len(first_frame["pos"])/2)
+N = int(len(first_frame["pos"])/copyNum)
+
+MD = np.array([3759738, 4641652])
+MD = MD/N_MG1655*N
+oriMD = MD.astype('int')
+MD = np.array([603414, 1206829])
+MD = MD/N_MG1655*N
+rightMD = MD.astype('int')
+MD = np.array([2181576+1, 2877824])
+MD = MD/N_MG1655*N
+leftMD = MD.astype('int')
+MD = np.array([1206829+1, 2181576])
+MD = MD/N_MG1655*N
+terMD = MD.astype('int')
+
+
+mass_array_bins =  np.loadtxt(modelsList[0] + "/massArray_bins.csv", delimiter=',')
+
+# localization_restraints_file = '../data/230615_localization_data_radial.csv'
+localization_restraints_file = '../data/240528_localization_data_radial_repInput_normalizedR_polyfit.csv'
+restraints = pd.read_csv(localization_restraints_file,sep = ',')
+
+volume_ratio = 0.05
+r_monomer = 0.5 #never change
+v_monomer = (4/3)*np.pi*r_monomer**3 #calculating volume
+v_cylinder = v_monomer*N*(1/volume_ratio) #total volume of the cylinder=cell
+L=(4*v_cylinder/np.pi)**(1/3) #length of cylinder (DS 230516: changed 2V to 4V)
+R=L/2 #radius of cylinder
+L = round(L,1)
+R = round(R,1)
+Lf = ((restraints.cell_length.values[-1]-restraints.cell_length.values[0])/restraints.cell_length.values[0]+1)*L
+
+# modelsList = modelsList[:16]
+numModels = len(modelsList)
+
+args = []
+for m in modelsList:
+    args.append((m,blocks_per_bin,N, copyNum))
+
+# [contactMap, contactMapReduced] = get_instance_contacts(modelsList[0],blocks_per_bin,N, copyNum)
+# print(contactMap.toarray())
+# print('************')
+# print(contactMapReduced.toarray())
+
+with Pool(cpu_count()) as p:
+    Results = p.starmap(get_instance_distance, args)
+# print(Results)
+print('combining contacts\n')
+dynamicDistanceMat = []
+dynamicDistanceMatReduced = []
+for i in range(numBins):
+    for r in Results:
+        dynamicDistanceMat.append(r[0][i])
+        dynamicDistanceMatReduced.append(r[1][i])
+
+
+print('plotting contacts\n')
+
+outFolder = "dynamicDistanceMat_%s" % modelsPath
+# outFolder = "dynamicHiC_angK2_N1K"
+if not os.path.isdir(outFolder):
+    os.mkdir(outFolder)
+    os.mkdir(outFolder + '/3DContacts')
+    os.mkdir(outFolder + '/ReducedContacts')
+
+oriC_site = 3925860
+terBead = int((oriC_site-N_MG1655/2)/N_MG1655*N)
+oriBead = int(oriC_site/N_MG1655*N)
+
+window_size = 1
+thr = []
+thrReduced = []
+thrL = []
+thrReducedL = []
+combinedDistanceMat = np.zeros((numBins,N,N))
+combinedDistanceMatReduced = np.zeros((numBins,N,N))
+for i in range(int(np.floor(window_size/2)), numBins-int(np.floor(window_size/2))):
+    # combinedContactMap[i] = np.zeros((N,N))
+    # combinedContactMapReduced[i] = np.zeros((N,N))
+    for j in range(-int(np.floor(window_size/2)*numModels),(int(np.floor(window_size/2))+1)*numModels):
+        # print(numModels*i+j)
+        combinedDistanceMat[i] += dynamicDistanceMat[numModels*i+j]
+        combinedDistanceMatReduced[i] += dynamicDistanceMatReduced[numModels*i+j]
+    beadNum = np.sum(mass_array_bins[:,i]>0)
+    combinedDistanceMat[i] = combinedDistanceMat[i]/(blocks_per_bin*len(modelsList)*window_size)
+    combinedDistanceMatReduced[i] = combinedDistanceMatReduced[i]/(len(URIs)*len(modelsList)*window_size)
+    thr.append(np.quantile(combinedDistanceMat[i],0.80))
+    thrReduced.append(np.quantile(combinedDistanceMatReduced[i],0.80))
+    thrL.append(np.quantile(combinedDistanceMat[i],0.025))
+    thrReducedL.append(np.quantile(combinedDistanceMatReduced[i],0.025))
+    
+    
+np.save('simDistMatDynamic_%s.npy' % modelsPath, combinedDistanceMat)
+np.save('simDistMatReducedDimDynamic_%s.npy' % modelsPath, combinedDistanceMatReduced)
+
+thr = np.mean(np.array(thr))
+thrReduced = np.mean(np.array(thrReduced))
+thrL = np.mean(np.array(thrL))
+thrReducedL = np.mean(np.array(thrReducedL))
+for i in range(int(np.floor(window_size/2)), numBins-int(np.floor(window_size/2))):
+    beadsToGenome = list(map(int,np.linspace(0,N_MG1655/1e3,N)))
+    distanceMatdf = pd.DataFrame(combinedDistanceMat[i],columns=beadsToGenome,index=beadsToGenome)
+    fig, (ax1) = plt.subplots(1, 1)
+    sb.heatmap(distanceMatdf,vmin=thrL,vmax=thr,cmap='vlag_r',ax=ax1)
+    ax1.axvline(x=terBead,linewidth=1,color='g')
+    ax1.axvline(x=oriBead, linewidth=1, color='orange')
+    ax1.axhline(y=0, xmin=oriMD[0]/N, xmax=oriMD[1]/N, color='orange',linewidth=5)
+    ax1.axhline(y=0, xmin=terMD[0]/N, xmax=terMD[1]/N, color='g',linewidth=5)
+    ax1.axhline(y=0, xmin=rightMD[0]/N, xmax=rightMD[1]/N, color='m',linewidth=5)
+    ax1.axhline(y=0, xmin=leftMD[0]/N, xmax=leftMD[1]/N, color='purple',linewidth=5)
+    plt.savefig('%s/3DContacts/simDynamicDistMat%d.png' % (outFolder, i))
+    # plt.show()
+    plt.close(fig)
+    
+    distanceMatReduceddf = pd.DataFrame(combinedDistanceMatReduced[i],columns=beadsToGenome,index=beadsToGenome)
+    fig, (ax1) = plt.subplots(1, 1)
+    sb.heatmap(distanceMatReduceddf,vmin=thrReducedL,vmax=thrReduced,cmap='vlag_r',ax=ax1)
+    ax1.axvline(x=terBead,linewidth=1,color='g')
+    ax1.axvline(x=oriBead, linewidth=1, color='orange')
+    ax1.axhline(y=0, xmin=oriMD[0]/N, xmax=oriMD[1]/N, color='orange',linewidth=5)
+    ax1.axhline(y=0, xmin=terMD[0]/N, xmax=terMD[1]/N, color='g',linewidth=5)
+    ax1.axhline(y=0, xmin=rightMD[0]/N, xmax=rightMD[1]/N, color='m',linewidth=5)
+    ax1.axhline(y=0, xmin=leftMD[0]/N, xmax=leftMD[1]/N, color='purple',linewidth=5)
+    plt.savefig('%s/ReducedContacts/simDynamicDistMatReduced%d.png' % (outFolder, i))
+    # plt.show()
+    plt.close(fig)
+    
+
