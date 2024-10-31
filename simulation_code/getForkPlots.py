@@ -60,8 +60,8 @@ def saveStrainForkPlots(strainID,isrestraint, distToRestraint, modelsPath):
         
     outFolder = 'simulated_distribution_plots'
     forkPlotsPath = '%s/simulatedForkPlots_%s/' % (outFolder, modelsName)
-    radialPlotsPath = 's/simulatedRadialPlots_%s/' % (outFolder, modelsName)
-    doghnutPlotsPath = 's/simulatedDoughnutPlots_%s/' % (outFolder, modelsName)
+    radialPlotsPath = '%s/simulatedRadialPlots_%s/' % (outFolder, modelsName)
+    doghnutPlotsPath = '%s/simulatedDoughnutPlots_%s/' % (outFolder, modelsName)
     if not os.path.isdir(forkPlotsPath):
         os.mkdir(forkPlotsPath)
         os.mkdir(forkPlotsPath + 'restrainedStrains/')

@@ -148,7 +148,7 @@ if '/' in modelsPath:
 else:
     modelsName = modelsPath
 
-np.save('Distance_maps/Data/TMPsimDistMat_%s.npy' % modelsName, combinedDistanceMat)
+np.save('Distance_maps/Data/simDistMat_%s.npy' % modelsName, combinedDistanceMat)
 
 
 
